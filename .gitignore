@@ -66,6 +66,9 @@ skill/assets/config.json
 ?/
 skill/sdpm/.cache/
 
+# VS Code workspace
+*.code-workspace
+
 # Temporary workspace
 tmp/
 

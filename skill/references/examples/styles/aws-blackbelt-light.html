@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>AWS Black Belt Light — 白ベース。薄ラベンダー〜シアングラデーションでAWSブランドを表現する。</title>
+<style>
+  :root {
+    --color-bg-content: #ffffff;
+    --color-text: #1a1a2e;
+    --color-text-sub: #444444;
+    --color-accent: #0099e6;
+    --color-link: #0099e6;
+    --color-footer: rgba(0,0,0,0.45);
+    --template-theme: light;
+    /* 推奨テンプレート: aws-brand-light */
+    --font: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", "Arial", sans-serif;
+    --size-cover-super: 28pt;
+    --size-cover-title: 54pt;
+    --size-slide-title: 40pt;
+    --size-body: 22pt;
+    --size-body-sm: 18pt;
+    --size-footer: 10pt;
+  }
+  body { margin:0; padding:40px; background:#ccc; zoom:0.7; font-family:var(--font); }
+  .slide { position:relative; width:1920px; height:1080px; margin:0 auto 40px; overflow:hidden; }
+  .el { position:absolute; }
+
+  /* Cover: light lavender-purple-cyan gradient */
+  .bg-cover {
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(200,180,255,0.6) 0%, transparent 50%),
+      radial-gradient(ellipse at 85% 50%, rgba(100,220,255,0.55) 0%, transparent 45%),
+      radial-gradient(ellipse at 70% 70%, rgba(160,100,255,0.4) 0%, transparent 40%),
+      linear-gradient(135deg, #e8e4f8 0%, #d8d0f0 40%, #c8e8f8 100%);
+  }
+
+  /* Section divider: white base + right side green-cyan-purple glow */
+  .bg-section {
+    background:
+      radial-gradient(ellipse at 95% 15%, rgba(0,255,180,0.7) 0%, transparent 30%),
+      radial-gradient(ellipse at 100% 50%, rgba(100,255,200,0.6) 0%, transparent 35%),
+      radial-gradient(ellipse at 90% 80%, rgba(180,100,255,0.4) 0%, transparent 35%),
+      radial-gradient(ellipse at 70% 40%, rgba(200,180,255,0.3) 0%, transparent 40%),
+      linear-gradient(135deg, #f8f8fc 0%, #f0eef8 50%, #f8f8fc 100%);
+  }
+
+  /* Content: pure white */
+  .bg-content { background:#ffffff; }
+
+  /* Footer */
+  .footer { position:absolute; bottom:0; left:0; right:0; height:56px; display:flex; align-items:center; padding:0 48px; }
+  .aws-logo-wrap { display:flex; flex-direction:column; align-items:center; margin-right:12px; }
+  .aws-logo-text { font-size:18pt; font-weight:700; color:#1a1a2e; letter-spacing:-1px; line-height:1; }
+  .aws-logo-smile { width:40px; height:6px; border-bottom:3px solid #FF9900; border-radius:0 0 20px 20px; margin-top:2px; }
+  .footer-copy { font-size:var(--size-footer); color:var(--color-footer); flex:1; }
+  .page-num { font-size:14pt; color:var(--color-footer); }
+
+  /* Text */
+  .t-cover-super { font-size:var(--size-cover-super); font-weight:700; color:var(--color-text); letter-spacing:0.02em; }
+  .t-cover-title { font-size:var(--size-cover-title); font-weight:700; color:var(--color-text); line-height:1.2; }
+  .t-slide-title { font-size:var(--size-slide-title); font-weight:700; color:var(--color-text); line-height:1.2; }
+  .t-body { font-size:var(--size-body); font-weight:400; color:var(--color-text); line-height:1.6; }
+  .t-body-sm { font-size:var(--size-body-sm); font-weight:400; color:var(--color-text-sub); line-height:1.6; }
+  .t-link { color:var(--color-link); text-decoration:underline; }
+
+  /* Bullets */
+  .bullets { list-style:none; margin:0; padding:0; }
+  .bullets li { margin-bottom:24px; display:flex; align-items:flex-start; gap:16px; }
+  .b1::before { content:"•"; font-size:28pt; color:var(--color-text); line-height:1.2; flex-shrink:0; }
+  .b2::before { content:"–"; font-size:24pt; color:var(--color-accent); line-height:1.3; flex-shrink:0; margin-left:40px; }
+  .b3::before { content:">"; font-size:22pt; color:var(--color-accent); line-height:1.3; flex-shrink:0; margin-left:80px; }
+
+  /* Card */
+  .card-blue { background:#0099e6; border-radius:12px; display:flex; align-items:center; justify-content:center; color:#ffffff; font-size:var(--size-body); font-weight:700; }
+</style>
+</head>
+<body>
+
+<!-- Slide 1: Cover -->
+<div class="slide bg-cover">
+  <div class="el t-cover-super" style="left:96px;top:80px;width:1728px;text-align:center;">カバー上部テキスト（例: セミナーシリーズ名）</div>
+  <div class="el t-cover-title" style="left:96px;top:280px;width:1400px;">プレゼンテーションタイトル<br>〜サブタイトル〜</div>
+  <div class="el" style="left:96px;bottom:120px;">
+    <div style="font-size:var(--size-body);font-weight:700;color:var(--color-text);">氏名　名前</div>
+    <div class="t-body-sm">役職・肩書き</div>
+    <div class="t-body-sm">YYYY/MM</div>
+  </div>
+  <!-- AWS logo bottom right (dark version for light bg) -->
+  <div class="el" style="right:80px;bottom:60px;display:flex;flex-direction:column;align-items:center;">
+    <div style="font-size:32pt;font-weight:700;color:#1a1a2e;letter-spacing:-1px;line-height:1;">aws</div>
+    <div style="width:56px;height:8px;border-bottom:4px solid #FF9900;border-radius:0 0 28px 28px;margin-top:3px;"></div>
+  </div>
+  <div class="footer">
+    <div class="aws-logo-wrap"><div class="aws-logo-text">aws</div><div class="aws-logo-smile"></div></div>
+    <div class="footer-copy">© 2026, Amazon Web Services, Inc. or its affiliates. All rights reserved.</div>
+  </div>
+</div>
+
+<!-- Slide 2: Section divider -->
+<div class="slide bg-section">
+  <div class="footer">
+    <div class="aws-logo-wrap"><div class="aws-logo-text">aws</div><div class="aws-logo-smile"></div></div>
+    <div class="footer-copy">© 2026, Amazon Web Services, Inc. or its affiliates. All rights reserved.</div>
+    <div class="page-num">2</div>
+  </div>
+</div>
+
+<!-- Slide 3: Bullet list -->
+<div class="slide bg-content">
+  <div class="el t-slide-title" style="left:96px;top:60px;width:1728px;">スライドタイトル</div>
+  <div class="el" style="left:96px;top:200px;width:1600px;">
+    <ul class="bullets">
+      <li class="b1"><span class="t-body">箇条書き項目 1 — 本文テキストのサンプル</span></li>
+      <li class="b1"><span class="t-body">箇条書き項目 2 — 本文テキストのサンプル</span></li>
+      <li class="b1"><span class="t-body">箇条書き項目 3 — 本文テキストのサンプル</span></li>
+    </ul>
+  </div>
+  <div class="footer">
+    <div class="aws-logo-wrap"><div class="aws-logo-text">aws</div><div class="aws-logo-smile"></div></div>
+    <div class="footer-copy">© 2026, Amazon Web Services, Inc. or its affiliates. All rights reserved.</div>
+    <div class="page-num">3</div>
+  </div>
+</div>
+
+<!-- Slide 4: Nested bullets -->
+<div class="slide bg-content">
+  <div class="el t-slide-title" style="left:96px;top:60px;width:1728px;">箇条書きのレイアウト</div>
+  <div class="el" style="left:96px;top:200px;width:1600px;">
+    <ul class="bullets">
+      <li class="b1"><span class="t-body">箇条書きレベル 1</span></li>
+      <li class="b2"><span class="t-body">箇条書きレベル 2</span></li>
+      <li class="b3"><span class="t-body">箇条書きレベル 3</span></li>
+      <li class="b1"><span class="t-body">箇条書きレベル 1</span></li>
+    </ul>
+  </div>
+  <div class="footer">
+    <div class="aws-logo-wrap"><div class="aws-logo-text">aws</div><div class="aws-logo-smile"></div></div>
+    <div class="footer-copy">© 2026, Amazon Web Services, Inc. or its affiliates. All rights reserved.</div>
+    <div class="page-num">4</div>
+  </div>
+</div>
+
+<!-- Slide 5: Title + content + card -->
+<div class="slide bg-content">
+  <div class="el t-slide-title" style="left:96px;top:60px;width:1728px;">通常はこちらのレイアウト</div>
+  <div class="el t-body" style="left:96px;top:180px;color:#888888;">Title and content layout</div>
+  <div class="el t-body" style="left:200px;top:340px;">テキストボックスの<br>Sample</div>
+  <div class="el card-blue" style="left:200px;top:440px;width:420px;height:180px;">図形の　Sample</div>
+  <div class="footer">
+    <div class="aws-logo-wrap"><div class="aws-logo-text">aws</div><div class="aws-logo-smile"></div></div>
+    <div class="footer-copy">© 2026, Amazon Web Services, Inc. or its affiliates. All rights reserved.</div>
+    <div class="page-num">5</div>
+  </div>
+</div>
+
+<!-- Slide 6: Links + note -->
+<div class="slide bg-content">
+  <div class="el t-slide-title" style="left:96px;top:60px;width:1728px;">リンクと注記のレイアウト</div>
+  <div class="el" style="left:96px;top:200px;width:1600px;">
+    <ul class="bullets">
+      <li class="b1"><span class="t-body">本文テキスト項目 1 — 説明文のサンプルテキスト</span></li>
+      <li class="b1"><span class="t-body">本文テキスト項目 2 — 説明文のサンプルテキスト</span></li>
+      <li class="b3"><span class="t-body t-link">https://example.com/link-sample</span></li>
+    </ul>
+  </div>
+  <div class="el" style="left:96px;bottom:100px;width:900px;display:flex;align-items:flex-start;gap:20px;">
+    <div style="font-size:28pt;color:var(--color-text);font-weight:700;margin-top:4px;">𝕏</div>
+    <div style="font-size:var(--size-body-sm);color:var(--color-text);">SNS 投稿の案内テキスト<br><span style="font-weight:700;">#ハッシュタグ</span></div>
+  </div>
+  <div class="footer">
+    <div class="aws-logo-wrap"><div class="aws-logo-text">aws</div><div class="aws-logo-smile"></div></div>
+    <div class="footer-copy">© 2026, Amazon Web Services, Inc. or its affiliates. All rights reserved.</div>
+    <div class="page-num">6</div>
+  </div>
+</div>
+
+</body>
+</html>
