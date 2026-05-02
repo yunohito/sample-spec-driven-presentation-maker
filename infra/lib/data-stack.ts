@@ -131,6 +131,7 @@ export class DataStack extends cdk.Stack {
       ],
       destinationBucket: this.resourceBucket,
       destinationKeyPrefix: "templates/",
+      prune: false, // Preserve custom templates uploaded via upload_template.py
     });
 
     // Deploy asset icons — auto-download if not present
