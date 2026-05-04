@@ -190,6 +190,8 @@ CloudWatch ログで確認した事実: WebUI が同じセッションに 109ms 
 | `3f3e84c` | feat(agent): MCP 自動再接続 + LoopGuard 改善 + WebUI デバウンス + デバッグログ |
 | `3986188` | feat(infra): idleRuntimeSessionTimeout 3600s + MCP custom scope |
 | `77258fb` | revert(infra): idleRuntimeSessionTimeout を削除しデフォルト 15 分に戻す |
+| `eccd581` | fix(composer): logger import 追加 + F821 チェックを deploy チェックリストに追加 |
+| `475dd65` | fix(composer): リトライ時に MCP 再接続 + バックオフ |
 
 ## 調査で判明した事実（未解決）
 
