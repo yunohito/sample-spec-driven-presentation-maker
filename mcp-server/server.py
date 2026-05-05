@@ -80,6 +80,7 @@ _original_tm_call_tool = mcp._tool_manager.call_tool
 
 async def _logged_tm_call_tool(name, arguments, **kwargs):
     """Wrap _tool_manager.call_tool to log tool name, duration, and errors."""
+    logger.info("tool_start: tool=%s", name)
     t0 = time.time()
     try:
         result = await _original_tm_call_tool(name, arguments, **kwargs)
