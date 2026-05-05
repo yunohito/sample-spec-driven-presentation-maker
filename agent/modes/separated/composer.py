@@ -365,6 +365,8 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
                         event.cancel_tool = ERROR_LIMIT_PROMPT
                         return
                     tu = event.tool_use
+                    logger.info("composer_tool_send: group=%d, tool=%s, slugs=%s",
+                                gi + 1, tu.get("name", ""), slugs_label)
                     progress_q.put_nowait({
                         "group": gi + 1, "slugs": slugs_label,
                         "tool": tu.get("name", ""), "toolUseId": tu.get("toolUseId", ""),
