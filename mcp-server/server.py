@@ -74,6 +74,24 @@ mcp = FastMCP(
     instructions=_INSTRUCTIONS,
 )
 
+# --- Tool call logging middleware ---
+_original_call_tool = mcp.call_tool
+
+
+async def _logged_call_tool(name: str, arguments: dict) -> object:
+    """Wrap call_tool to log tool name, duration, and errors."""
+    t0 = time.time()
+    try:
+        result = await _original_call_tool(name, arguments)
+        logger.info("tool_ok: tool=%s, duration=%.1fs", name, time.time() - t0)
+        return result
+    except Exception as e:
+        logger.error("tool_fail: tool=%s, duration=%.1fs, error=%s", name, time.time() - t0, str(e)[:500])
+        raise
+
+
+mcp.call_tool = _logged_call_tool
+
 # --- HTTP Request ContextVar (for extracting user_id from Runtime header) ---
 _current_request_headers: ContextVar[dict] = ContextVar("_current_request_headers", default={})
 
