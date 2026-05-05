@@ -220,6 +220,8 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
         summaries = {}
         total = sum(len(g["slugs"]) for g in slide_groups)
         done_count = 0
+        compose_start = time.time()
+        logger.info("compose_start: deck=%s, groups=%d, slides=%d", deck_id, len(slide_groups), total)
 
         try:
             # Prefetch static composer parts (role prompt + refs) via composition
@@ -515,6 +517,8 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
             "errors": errors,
             "summaries": summaries,
         }
+        logger.info("compose_end: deck=%s, status=%s, slides=%d/%d, errors=%d, duration=%.1fs",
+                    deck_id, report["status"], len(generated), total, len(errors), time.time() - compose_start)
         if cancelled:
             report["notice"] = (
                 "Stopped by user cancellation. Do NOT retry automatically — "
