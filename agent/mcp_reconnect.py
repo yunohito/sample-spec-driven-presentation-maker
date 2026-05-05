@@ -265,6 +265,11 @@ class MCPReconnectHandler:
         if not error_text:
             error_text = str(result)
 
+        tool_name = event.tool_use.get("name", "")
+        logger.warning("Tool error: tool=%s, exception_type=%s, error=%s",
+                       tool_name, type(real_exception).__name__ if real_exception else "None",
+                       error_text[:500])
+
         # Use real exception for classification if available, otherwise synthesize
         error = real_exception if real_exception is not None else ConnectionError(error_text)
 
