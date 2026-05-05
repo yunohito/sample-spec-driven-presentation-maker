@@ -206,6 +206,7 @@ export class AgentStack extends cdk.Stack {
         AWS_DEFAULT_REGION: this.region,
         COMPOSER_MAX_CONCURRENCY: "10",
         DEPLOY_TIMESTAMP: new Date().toISOString(),
+        DISABLE_ADOT_OBSERVABILITY: "true",
       },
       description: "spec-driven-presentation-maker Strands Agent — connects to MCP Server for slide generation",
     });

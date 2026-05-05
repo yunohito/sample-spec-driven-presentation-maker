@@ -233,6 +233,7 @@ export class RuntimeStack extends cdk.Stack {
         VECTOR_BUCKET_NAME: props.vectorBucketName ?? "",
         VECTOR_INDEX_NAME: props.vectorIndexName ?? "",
         DEPLOY_TIMESTAMP: new Date().toISOString(),
+        DISABLE_ADOT_OBSERVABILITY: "true",
       },
       description: "spec-driven-presentation-maker MCP Server — AI-powered presentation generation",
     });
