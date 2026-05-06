@@ -23,7 +23,7 @@ from composition import resolve_parts
 from model_profiles import build_model_kwargs, MODEL_PROFILES
 from modes import MODES
 from modes.separated.composer import make_compose_slides
-from mcp_reconnect import MCPReconnectHandler, MCPServerEntry
+from mcp_reconnect import MCPReconnect
 from resilience import LoopGuard
 from session import fix_excess_tool_results
 from tools.hearing_tool import hearing
@@ -67,11 +67,11 @@ _MCP_FACTORIES = [
 # Unified factory
 # ---------------------------------------------------------------------------
 
-def create_agent(mode: str, user_id: str, session_id: str, jwt_token: str, chat_model_id: str | None = None, create_model_id: str | None = None) -> tuple[Agent, list[dict], MCPReconnectHandler | None]:
+def create_agent(mode: str, user_id: str, session_id: str, jwt_token: str, chat_model_id: str | None = None, create_model_id: str | None = None) -> tuple[Agent, list[dict], MCPReconnect | None]:
     """Create a Strands Agent for the given mode.
 
     Returns:
-        Tuple of (Configured Strands Agent, MCP status list, MCPReconnectHandler or None).
+        Tuple of (Configured Strands Agent, MCP status list, MCPReconnect or None).
     """
     cfg = MODES[mode]
     memory_id = os.environ.get("MEMORY_ID", "")
@@ -99,7 +99,10 @@ def create_agent(mode: str, user_id: str, session_id: str, jwt_token: str, chat_
     resolved_agent = _resolve_model_id(requested_agent, default_agent)
     model = BedrockModel(
         **build_model_kwargs(resolved_agent),
-        boto_client_config=BotocoreConfig(read_timeout=120),
+        boto_client_config=BotocoreConfig(
+            read_timeout=300,
+            retries={"max_attempts": 5, "mode": "adaptive"},
+        ),
     )
 
     # MCP servers
@@ -118,17 +121,14 @@ def create_agent(mode: str, user_id: str, session_id: str, jwt_token: str, chat_
     tools = [*mcp_servers, web_fetch, hearing]
     composer_mcp_factory = None
 
-    # MCPReconnectHandler
-    reconnect_entries = [
-        MCPServerEntry(
-            name=name, required=required, index=i,
-            factory_fn=factory_fn,
-            client=mcp_servers[i] if i < len(mcp_servers) and mcp_status[i]["status"] == "ok" else None,
-            status="ok" if i < len(mcp_servers) and mcp_status[i]["status"] == "ok" else "disabled",
+    # MCPReconnect (Presentation Maker only — first MCP server)
+    mcp_reconnect = None
+    if mcp_servers and mcp_status[0]["status"] == "ok":
+        mcp_reconnect = MCPReconnect(
+            factory_fn=_MCP_FACTORIES[0],
+            jwt_token=jwt_token,
         )
-        for i, ((name, required), factory_fn) in enumerate(zip(MCP_DEFS, _MCP_FACTORIES))
-    ]
-    reconnect_handler = MCPReconnectHandler(entries=reconnect_entries, jwt_token=jwt_token)
+        mcp_reconnect.set_client(mcp_servers[0])
 
     if cfg.use_composer:
         resolved_create = _resolve_model_id(create_model_id, _DEFAULT_CREATE_MODEL_ID)
@@ -140,11 +140,11 @@ def create_agent(mode: str, user_id: str, session_id: str, jwt_token: str, chat_
             **build_model_kwargs(resolved_create),
             boto_client_config=BotocoreConfig(
                 user_agent_extra="strands-agents",
-                read_timeout=120,
+                read_timeout=300,
                 retries={"max_attempts": 5, "mode": "adaptive"},
             ),
         )
-        composer_mcp_factory = lambda: reconnect_handler.create_composer_mcp()  # noqa: E731
+        composer_mcp_factory = mcp_reconnect.new_client if mcp_reconnect else None
         compose_slides = make_compose_slides(mcp_servers, composer_model, composer_mcp_factory)
         tools.append(compose_slides)
 
@@ -197,9 +197,10 @@ def create_agent(mode: str, user_id: str, session_id: str, jwt_token: str, chat_
         agent.messages.extend(initial_messages)
     agent.system_prompt = system_prompt
 
-    # MCPReconnectHandler hooks (before LoopGuard so reconnection happens first)
-    agent.hooks.add_callback(AfterToolCallEvent, reconnect_handler.after_tool_hook)
-    agent.hooks.add_callback(BeforeToolCallEvent, reconnect_handler.before_tool_hook)
+    # MCPReconnect hooks (before LoopGuard so reconnection happens first)
+    if mcp_reconnect:
+        agent.hooks.add_callback(AfterToolCallEvent, mcp_reconnect.after_tool_hook)
+        agent.hooks.add_callback(BeforeToolCallEvent, mcp_reconnect.before_tool_hook)
 
     # LoopGuard
     guard = LoopGuard(max_tool_calls=int(os.environ.get("SPEC_MAX_TOOL_CALLS", "300")))
@@ -210,4 +211,4 @@ def create_agent(mode: str, user_id: str, session_id: str, jwt_token: str, chat_
 
     fix_excess_tool_results(agent.messages)
 
-    return agent, mcp_status, reconnect_handler
+    return agent, mcp_status, mcp_reconnect

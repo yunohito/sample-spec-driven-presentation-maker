@@ -16,6 +16,7 @@ import base64
 import json
 import logging
 import os
+import signal
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
@@ -24,10 +25,30 @@ from streaming import stream_agent
 
 logger = logging.getLogger("sdpm.agent")
 
+
+def _signal_handler(signum, frame):
+    logger.error("Received signal %s — process being terminated", signal.Signals(signum).name)
+
+
+signal.signal(signal.SIGTERM, _signal_handler)
+
 app = BedrockAgentCoreApp()
+
+AGENT_VERSION = "2026-05-06a"  # bump on each deploy to verify container image
 
 # Cancel registry: session_id → asyncio.Event.
 _cancel_events: dict[str, asyncio.Event] = {}
+
+logger.info("agent_boot: version=%s", AGENT_VERSION)
+
+
+@app.ping
+def _ping_status():
+    active = len(_cancel_events)
+    from bedrock_agentcore.runtime.models import PingStatus
+    status = PingStatus.HEALTHY_BUSY if active else PingStatus.HEALTHY
+    logger.info("ping_response: %s, active_sessions=%d", status.value, active)
+    return status
 
 
 @app.entrypoint
@@ -82,9 +103,10 @@ async def agent_stream(payload, context):
     try:
         os.environ["_CURRENT_SESSION_ID"] = session_id
         mode = payload.get("mode", "single")
+        logger.info("session_start: session=%s, mode=%s", session_id[:12], mode)
         requested_chat_model_id = payload.get("chatModelId") if isinstance(payload, dict) else None
         requested_create_model_id = payload.get("createModelId") if isinstance(payload, dict) else None
-        agent, mcp_status, reconnect_handler = create_agent(
+        agent, mcp_status, mcp_reconnect = create_agent(
             mode=mode,
             user_id=user_id,
             session_id=session_id,
@@ -95,9 +117,11 @@ async def agent_stream(payload, context):
 
         yield {"mcp_status": mcp_status}
 
-        async for event in stream_agent(agent, user_query, session_id, cancel, reconnect_handler=reconnect_handler):
+        async for event in stream_agent(agent, user_query, session_id, cancel, reconnect_handler=mcp_reconnect):
             yield event
 
+    except GeneratorExit:
+        logger.warning("Client disconnected (GeneratorExit) for session %s", session_id[:12])
     except Exception as e:
         logger.exception("Agent stream error for session %s", session_id[:12])
         yield {"status": "error", "error": str(e)}

@@ -27,7 +27,9 @@ class ModelProfile:
     Attributes:
         temperature: Sampling temperature. ``None`` means "do not pass
             ``temperature`` to BedrockModel at all" — required for models
-            that reject the parameter (e.g. Claude Opus 4.7 extended thinking).
+            that reject the parameter (e.g. Claude Opus 4.7 adaptive thinking).
+        max_tokens: Maximum output tokens. ``None`` means use Bedrock default.
+        additional_request_fields: Extra fields for Bedrock request (e.g. thinking config).
         cache_strategy: Prompt-caching strategy. ``"auto"`` enables
             Strands' automatic prompt cache. ``"none"`` disables it for
             models that do not support prompt caching on Bedrock.
@@ -37,6 +39,8 @@ class ModelProfile:
     """
 
     temperature: float | None = 0.1
+    max_tokens: int | None = None
+    additional_request_fields: dict | None = None
     cache_strategy: Literal["auto", "none"] = "auto"
     compose_capable: bool = True
 
@@ -53,6 +57,10 @@ class ModelProfile:
         kwargs: dict = {}
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
+        if self.max_tokens is not None:
+            kwargs["max_tokens"] = self.max_tokens
+        if self.additional_request_fields is not None:
+            kwargs["additional_request_fields"] = self.additional_request_fields
         if self.cache_strategy == "auto":
             kwargs["cache_config"] = CacheConfig(strategy="auto")
         return kwargs
@@ -68,14 +76,19 @@ CLAUDE_STANDARD = ModelProfile(temperature=0.1, cache_strategy="auto")
 # Claude Haiku — same invocation params as standard, but not capable enough for compose.
 CLAUDE_HAIKU = ModelProfile(temperature=0.1, cache_strategy="auto", compose_capable=False)
 
-# Claude with extended thinking (e.g. Opus 4.7). Bedrock rejects
+# Claude with extended thinking (e.g. Opus 4.5). Bedrock rejects
 # ``temperature`` because extended thinking forces temperature=1 internally;
 # passing it triggers ``ValidationException: temperature is deprecated``.
-CLAUDE_EXTENDED_THINKING = ModelProfile(temperature=None, cache_strategy="auto")
+CLAUDE_EXTENDED_THINKING = ModelProfile(temperature=None, cache_strategy="auto",
+                                        max_tokens=128000,
+                                        additional_request_fields={"thinking": {"type": "enabled", "budget_tokens": 32000}})
 
-# Claude with adaptive thinking (e.g. Opus 4.6). Temperature=1 is required
-# when reasoning is enabled; Strands handles this internally.
-CLAUDE_ADAPTIVE_THINKING = ModelProfile(temperature=1.0, cache_strategy="auto")
+# Claude with adaptive thinking (e.g. Opus 4.6, Opus 4.7). Temperature is
+# not supported when thinking is enabled. Adaptive mode lets Claude decide
+# how much to think based on task complexity.
+CLAUDE_ADAPTIVE_THINKING = ModelProfile(temperature=None, cache_strategy="auto",
+                                        max_tokens=128000,
+                                        additional_request_fields={"thinking": {"type": "adaptive"}})
 
 # Amazon Nova 2 — supports prompt caching.
 NOVA_2_DEFAULT = ModelProfile(temperature=0.7, cache_strategy="auto", compose_capable=False)
@@ -103,7 +116,7 @@ _DEFAULT = CLAUDE_STANDARD
 
 MODEL_PROFILES: dict[str, ModelProfile] = {
     # Anthropic Claude
-    "global.anthropic.claude-opus-4-7": CLAUDE_EXTENDED_THINKING,
+    "global.anthropic.claude-opus-4-7": CLAUDE_ADAPTIVE_THINKING,
     "global.anthropic.claude-opus-4-6-v1": CLAUDE_ADAPTIVE_THINKING,
     "global.anthropic.claude-sonnet-4-6": CLAUDE_STANDARD,
     "global.anthropic.claude-haiku-4-5-20251001-v1:0": CLAUDE_HAIKU,
