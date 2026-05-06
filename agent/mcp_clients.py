@@ -34,7 +34,7 @@ def mcp_agentcore_runtime(jwt_token: str) -> MCPClient:
         lambda: streamablehttp_client(
             url=url,
             headers={"Authorization": f"Bearer {jwt_token}"},
-            timeout=120,
+            timeout=360,
             terminate_on_close=False,
         ),
     )
