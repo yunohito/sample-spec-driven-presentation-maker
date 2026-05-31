@@ -11,6 +11,8 @@ from typing import AsyncGenerator
 from partial_json_parser import loads as _partial_loads
 from strands import Agent
 
+from modes.separated.composer import _compose_state
+
 logger = logging.getLogger("sdpm.agent")
 
 KEEPALIVE_INTERVAL = 5
@@ -35,7 +37,8 @@ async def stream_agent(agent: Agent, user_query: str, session_id: str, cancel: a
     tool_name_map: dict[str, str] = {}
     in_tool_execution = False
     in_tool_since: float = 0.0  # monotonic time when in_tool became True
-    _TOOL_TIMEOUT = 360  # seconds — must exceed MCP Server's sessionTimeoutSeconds (300)
+    _last_compose_debug: dict = {}
+    _TOOL_TIMEOUT = 900  # seconds — must exceed compose_slides total time (13 slides × ~40s = ~520s typical)
 
     def _tool_payload(tu: dict) -> dict:
         raw = tu.get("input", "")
@@ -78,7 +81,29 @@ async def stream_agent(agent: Agent, user_query: str, session_id: str, cancel: a
             if done:
                 try:
                     event = pending.result()
+                    # Temporary debug: log event keys to identify how compose_slides yields arrive
+                    if isinstance(event, dict):
+                        _evt_keys = sorted(event.keys())
+                        if "tool_stream_event" in event or "_debug" in str(event)[:200] or "status" in event or "group" in event:
+                            logger.info("stream_event_debug: keys=%s sample=%s", _evt_keys, json.dumps(event, ensure_ascii=False, default=str)[:300])
                     if isinstance(event, dict) and "event" in event:
+                        _ev_inner = event.get("event")
+                        if isinstance(_ev_inner, dict):
+                            # Log all compose_slides yield dicts passing through this branch
+                            _ts_data = _ev_inner.get("data") or _ev_inner.get("toolStream", {}).get("data")
+                            if _ts_data is None and ("group" in _ev_inner or "status" in _ev_inner or "slugs" in _ev_inner or "_debug" in _ev_inner):
+                                logger.info("compose_yield_structure: %s", json.dumps(_ev_inner, ensure_ascii=False, default=str)[:500])
+                            elif isinstance(_ts_data, dict):
+                                _last_compose_debug = _ts_data
+                                logger.info("compose_yield: %s", json.dumps(_ts_data, ensure_ascii=False, default=str)[:500])
+                            elif isinstance(_ts_data, str):
+                                try:
+                                    _p = json.loads(_ts_data)
+                                    if isinstance(_p, dict):
+                                        _last_compose_debug = _p
+                                        logger.info("compose_yield: %s", json.dumps(_p, ensure_ascii=False, default=str)[:500])
+                                except (json.JSONDecodeError, ValueError):
+                                    pass
                         yield event
                     elif isinstance(event, dict) and "current_tool_use" in event:
                         tu = event["current_tool_use"]
@@ -104,7 +129,20 @@ async def stream_agent(agent: Agent, user_query: str, session_id: str, cancel: a
                         data = tse.get("data")
                         tu = tse.get("tool_use", {})
                         if isinstance(data, dict):
+                            logger.info("compose_yield: %s", json.dumps(data, ensure_ascii=False, default=str)[:500])
+                            if "_debug" in data:
+                                _last_compose_debug = data
+                                logger.info("compose_debug: %s", json.dumps(data, ensure_ascii=False)[:500])
                             yield {"toolStream": {"toolUseId": tu.get("toolUseId", last_tool_use_id), "name": tu.get("name", ""), "data": data}}
+                        elif isinstance(data, str):
+                            try:
+                                parsed_data = json.loads(data)
+                                if isinstance(parsed_data, dict) and "_debug" in parsed_data:
+                                    _last_compose_debug = parsed_data
+                                    logger.info("compose_debug: %s", json.dumps(parsed_data, ensure_ascii=False)[:500])
+                                yield {"toolStream": {"toolUseId": tu.get("toolUseId", last_tool_use_id), "name": tu.get("name", ""), "data": parsed_data if isinstance(parsed_data, dict) else data}}
+                            except (json.JSONDecodeError, ValueError):
+                                yield {"toolStream": {"toolUseId": tu.get("toolUseId", last_tool_use_id), "name": tu.get("name", ""), "data": data}}
                     elif isinstance(event, dict) and "message" in event:
                         msg = event["message"]
                         if isinstance(msg, dict) and msg.get("role") == "user":
@@ -154,8 +192,9 @@ async def stream_agent(agent: Agent, user_query: str, session_id: str, cancel: a
                 keepalive_count += 1
                 if keepalive_count % 10 == 0:
                     rss_kb = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
-                    logger.info("stream_agent keepalive #%d for session %s (in_tool=%s, cancel=%s, rss_kb=%d)",
-                                keepalive_count, session_id[:12], in_tool_execution, cancel.is_set(), rss_kb)
+                    logger.info("stream_agent keepalive #%d for session %s (in_tool=%s, cancel=%s, rss_kb=%d, last_compose=%s)",
+                                keepalive_count, session_id[:12], in_tool_execution, cancel.is_set(), rss_kb,
+                                json.dumps(_compose_state, ensure_ascii=False) if _compose_state else "none")
                 if _should_stop():
                     logger.info("Stopping stream (idle) for session %s", session_id[:12])
                     break

@@ -150,6 +150,8 @@ def create_agent(mode: str, user_id: str, session_id: str, jwt_token: str, chat_
 
     # Agent
     agent_name = f"Sdpm{mode.capitalize()}Agent"
+    tool_names = [getattr(t, 'tool_name', None) or getattr(t, 'name', None) or str(t)[:30] for t in tools]
+    logger.info("agent_tools: mode=%s, tools=%s", mode, tool_names)
     try:
         agent = Agent(
             name=agent_name, system_prompt="", tools=tools, model=model,

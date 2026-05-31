@@ -34,7 +34,7 @@ signal.signal(signal.SIGTERM, _signal_handler)
 
 app = BedrockAgentCoreApp()
 
-AGENT_VERSION = "2026-05-06a"  # bump on each deploy to verify container image
+AGENT_VERSION = "2026-05-10b"  # bump on each deploy to verify container image
 
 # Cancel registry: session_id → asyncio.Event.
 _cancel_events: dict[str, asyncio.Event] = {}

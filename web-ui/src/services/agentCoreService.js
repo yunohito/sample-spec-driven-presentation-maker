@@ -108,16 +108,30 @@ export const invokeAgentCore = async (query, sessionId, onStreamUpdate, accessTo
       ...(selectedCreateModelId ? { createModelId: selectedCreateModelId } : {}),
     }
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      signal,
-    })
+    // Retry on cold-start errors (502/503/504) — max 2 retries with backoff
+    const MAX_RETRIES = 2;
+    let response;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        signal,
+      })
 
-    if (!response.ok) {
+      if (response.ok) break;
+
+      const status = response.status;
+      // Only retry on server errors that indicate cold-start / transient failure
+      if ((status === 502 || status === 503 || status === 504) && attempt < MAX_RETRIES) {
+        const delay = (attempt + 1) * 3000; // 3s, 6s
+        onStreamUpdate?.(`⏳ Agent starting up... retrying in ${delay / 1000}s (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+
       const errorText = await response.text()
-      throw new Error(`HTTP ${response.status}: ${errorText}`)
+      throw new Error(`HTTP ${status}: ${errorText}`)
     }
 
     let completion = '';

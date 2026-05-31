@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: MIT-0
 """Composer agent: compose_slides tool with parallel execution, prefetch, and post-build."""
 
+import asyncio
 import json
 import logging
 import os
 import queue
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -41,6 +43,11 @@ STOP_PROMPT = (
 # Time budget per slide — when exceeded, nudge the composer to wrap up polishing
 # and finish any unwritten slides. Injected into tool results (non-disruptive).
 _SECONDS_PER_SLIDE = int(os.environ.get("COMPOSER_SECONDS_PER_SLIDE", "90"))
+_HARD_TIMEOUT_MULTIPLIER = int(os.environ.get("COMPOSER_HARD_TIMEOUT_MULTIPLIER", "3"))
+
+# Shared state: updated by composer, read by streaming.py keepalive loop.
+# Same process, so module-level dict is safe for cross-module access.
+_compose_state: dict = {}
 BUDGET_PROMPT = (
     "Time budget reached. If any assigned slides are still unwritten, "
     "finish them with a rough-but-coherent draft. "
@@ -213,6 +220,7 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
         # LLM sometimes passes slide_groups as a JSON string instead of a list
         if isinstance(slide_groups, str):
             slide_groups = json.loads(slide_groups)
+
         parent_tool_use_id = tool_context.tool_use["toolUseId"]
 
         generated = []
@@ -221,7 +229,7 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
         total = sum(len(g["slugs"]) for g in slide_groups)
         done_count = 0
         compose_start = time.time()
-        logger.info("compose_start: deck=%s, groups=%d, slides=%d", deck_id, len(slide_groups), total)
+        logger.info("compose_start: deck=%s, groups=%d, slides=%d, thread=%s", deck_id, len(slide_groups), total, threading.current_thread().name)
 
         try:
             # Prefetch static composer parts (role prompt + refs) via composition
@@ -272,8 +280,17 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
                     return {"slugs": [], "response": "skipped (cancelled)"}
                 progress_q.put_nowait({"group": gi + 1, "total_groups": len(slide_groups), "slugs": slugs_label, "status": "starting"})
 
+                logger.info("run_group_prefetch_start: group=%d, slugs=%s", gi + 1, slugs_label)
+                print(f"[COMPOSE] run_group_prefetch_start: group={gi + 1}, slugs={slugs_label}", flush=True)
+                progress_q.put_nowait({"_debug": "prefetch_start", "group": gi + 1, "slugs": slugs_label})
+                _compose_state.update({"_debug": "prefetch_start", "group": gi + 1, "slugs": slugs_label})
+                t_prefetch = time.time()
                 deck_sections = _prefetch_deck_specs(mcp_client, deck_id, group["slugs"]) if mcp_client else []
                 deck_context = _build_deck_context(deck_sections)
+                logger.info("run_group_prefetch_end: group=%d, slugs=%s, duration=%.1fs", gi + 1, slugs_label, time.time() - t_prefetch)
+                print(f"[COMPOSE] run_group_prefetch_end: group={gi + 1}, slugs={slugs_label}, duration={time.time() - t_prefetch:.1f}s", flush=True)
+                progress_q.put_nowait({"_debug": "prefetch_end", "group": gi + 1, "slugs": slugs_label, "duration": round(time.time() - t_prefetch, 1)})
+                _compose_state.update({"_debug": "prefetch_end", "group": gi + 1, "slugs": slugs_label, "duration": round(time.time() - t_prefetch, 1)})
 
                 slugs_list = ", ".join(f"slides/{s}.json" for s in group["slugs"])
                 tmpl_section = (
@@ -424,10 +441,31 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
                 composer.hooks.add_callback(AfterToolCallEvent, guard.after_tool)
 
                 max_retries = 2
+                hard_timeout = len(group["slugs"]) * _SECONDS_PER_SLIDE * _HARD_TIMEOUT_MULTIPLIER
+
+                def _hard_timeout_handler():
+                    logger.error("hard_timeout_fired: group=%d, slugs=%s, timeout=%ds", gi + 1, slugs_label, hard_timeout)
+                    print(f"[COMPOSE] hard_timeout_fired: group={gi + 1}, slugs={slugs_label}, timeout={hard_timeout}s", flush=True)
+                    progress_q.put_nowait({"_debug": "hard_timeout_fired", "group": gi + 1, "slugs": slugs_label, "timeout": hard_timeout})
+                    _compose_state.update({"_debug": "hard_timeout_fired", "group": gi + 1, "slugs": slugs_label, "timeout": hard_timeout})
+                    composer.cancel()
+
                 try:
                     for attempt in range(max_retries + 1):
+                        timer = threading.Timer(hard_timeout, _hard_timeout_handler)
+                        timer.daemon = True
+                        timer.start()
                         try:
+                            logger.info("run_group_composer_start: group=%d, slugs=%s, attempt=%d, hard_timeout=%ds", gi + 1, slugs_label, attempt, hard_timeout)
+                            print(f"[COMPOSE] run_group_composer_start: group={gi + 1}, slugs={slugs_label}, attempt={attempt}, hard_timeout={hard_timeout}s", flush=True)
+                            progress_q.put_nowait({"_debug": "composer_start", "group": gi + 1, "slugs": slugs_label, "attempt": attempt})
+                            _compose_state.update({"_debug": "composer_start", "group": gi + 1, "slugs": slugs_label, "attempt": attempt})
+                            t_composer = time.time()
                             response = composer(user_content if attempt == 0 else None)
+                            logger.info("run_group_composer_end: group=%d, slugs=%s, attempt=%d, duration=%.1fs", gi + 1, slugs_label, attempt, time.time() - t_composer)
+                            print(f"[COMPOSE] run_group_composer_end: group={gi + 1}, slugs={slugs_label}, attempt={attempt}, duration={time.time() - t_composer:.1f}s", flush=True)
+                            progress_q.put_nowait({"_debug": "composer_end", "group": gi + 1, "slugs": slugs_label, "attempt": attempt, "duration": round(time.time() - t_composer, 1)})
+                            _compose_state.update({"_debug": "composer_end", "group": gi + 1, "slugs": slugs_label, "attempt": attempt, "duration": round(time.time() - t_composer, 1)})
                             if guard.cancelled:
                                 progress_q.put_nowait({
                                     "group": gi + 1, "slugs": slugs_label,
@@ -437,6 +475,17 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
                             progress_q.put_nowait({"group": gi + 1, "slugs": slugs_label, "status": "done"})
                             return {"slugs": group["slugs"], "response": str(response)}
                         except Exception as e:
+                            # 401 early return: JWT expired, retrying is pointless
+                            error_str = str(e)
+                            if hasattr(e, 'exceptions'):
+                                error_str = " | ".join(str(sub) for sub in e.exceptions)
+                            if "401" in error_str or "Unauthorized" in error_str:
+                                logger.error("compose group auth expired (401), aborting retries: %s", slugs_label)
+                                progress_q.put_nowait({
+                                    "group": gi + 1, "slugs": slugs_label,
+                                    "status": "auth_expired", "error": error_str[:200],
+                                })
+                                return {"slugs": group["slugs"], "response": f"auth_expired: {error_str[:200]}"}
                             if attempt < max_retries:
                                 progress_q.put_nowait({
                                     "group": gi + 1, "slugs": slugs_label,
@@ -448,14 +497,23 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
                                         _group_mcp.stop(None, None, None)
                                     except Exception:
                                         pass
-                                    try:
-                                        _group_mcp = composer_mcp_factory()
-                                        composer.tool_registry.process_tools([_group_mcp])
-                                    except Exception as mcp_err:
-                                        logger.warning("group MCP reconnect failed for %s: %s", slugs_label, mcp_err)
+                                    _group_mcp = None
+                                    for _rc in range(5):
+                                        try:
+                                            _group_mcp = composer_mcp_factory()
+                                            composer.tool_registry.process_tools([_group_mcp])
+                                            logger.info("group MCP reconnect succeeded for %s (attempt %d)", slugs_label, _rc + 1)
+                                            break
+                                        except Exception as mcp_err:
+                                            if _rc == 4:
+                                                logger.warning("group MCP reconnect failed for %s: %s", slugs_label, mcp_err)
+                                            else:
+                                                time.sleep(min(2 ** _rc, 10))
                                 time.sleep(min(2 ** (attempt + 1), 10))  # backoff before retry
                                 continue
                             raise
+                        finally:
+                            timer.cancel()
                 finally:
                     # Release the per-group MCPClient's background thread.
                     if _group_mcp is not None:
@@ -470,11 +528,15 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
             else:
                 with ThreadPoolExecutor(max_workers=max_concurrency) as pool:
                     futures = {pool.submit(run_group, gi, g): gi for gi, g in enumerate(slide_groups)}
+                    logger.info("compose_pool_started: groups=%d, max_concurrency=%d", len(slide_groups), max_concurrency)
+                    print(f"[COMPOSE] compose_pool_started: groups={len(slide_groups)}, max_concurrency={max_concurrency}", flush=True)
 
                     while futures:
                         while not progress_q.empty():
                             try:
-                                yield progress_q.get_nowait()
+                                _item = progress_q.get_nowait()
+                                logger.info("compose_yield: %s", json.dumps(_item, ensure_ascii=False, default=str)[:500])
+                                yield _item
                             except queue.Empty:
                                 break
 
@@ -488,17 +550,29 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
                                 generated.extend(result["slugs"])
                                 done_count += len(result["slugs"])
                                 summaries[slugs_label] = result["response"]
+                                logger.info("compose_future_done: group=%d, slugs=%s, status=success, done=%d/%d, elapsed=%.1fs", gi + 1, slugs_label, done_count, total, time.time() - compose_start)
+                                print(f"[COMPOSE] compose_future_done: group={gi + 1}, slugs={slugs_label}, status=success, done={done_count}/{total}, elapsed={time.time() - compose_start:.1f}s", flush=True)
+                                yield {"_debug": "future_done", "group": gi + 1, "slugs": slugs_label, "status": "success", "done": done_count, "total": total, "elapsed": round(time.time() - compose_start, 1)}
                                 yield {"group": gi + 1, "slugs": slugs_label, "status": "done", "done": done_count, "total": total}
                             except Exception as e:
                                 errors.append({"slugs": group["slugs"], "error": str(e)})
+                                logger.info("compose_future_done: group=%d, slugs=%s, status=error, error=%s, elapsed=%.1fs", gi + 1, slugs_label, str(e), time.time() - compose_start)
+                                print(f"[COMPOSE] compose_future_done: group={gi + 1}, slugs={slugs_label}, status=error, error={e}, elapsed={time.time() - compose_start:.1f}s", flush=True)
+                                yield {"_debug": "future_done", "group": gi + 1, "slugs": slugs_label, "status": "error", "error": str(e), "elapsed": round(time.time() - compose_start, 1)}
                                 yield {"group": gi + 1, "slugs": slugs_label, "status": "error", "error": str(e)}
 
                         if futures:
-                            time.sleep(0.2)
+                            await asyncio.sleep(0.2)
+
+                    logger.info("compose_pool_complete: total_generated=%d/%d, errors=%d, elapsed=%.1fs", len(generated), total, len(errors), time.time() - compose_start)
+                    print(f"[COMPOSE] compose_pool_complete: total_generated={len(generated)}/{total}, errors={len(errors)}, elapsed={time.time() - compose_start:.1f}s", flush=True)
+                    yield {"_debug": "pool_complete", "generated": len(generated), "total": total, "errors": len(errors), "elapsed": round(time.time() - compose_start, 1)}
 
             while not progress_q.empty():
                 try:
-                    yield progress_q.get_nowait()
+                    _item = progress_q.get_nowait()
+                    logger.info("compose_yield: %s", json.dumps(_item, ensure_ascii=False, default=str)[:500])
+                    yield _item
                 except queue.Empty:
                     break
 
@@ -530,11 +604,17 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
         if generated and mcp_client:
             # Generate PPTX
             try:
+                logger.info("generate_pptx_start: deck=%s, elapsed=%.1fs", deck_id, time.time() - compose_start)
+                print(f"[COMPOSE] generate_pptx_start: deck={deck_id}, elapsed={time.time() - compose_start:.1f}s", flush=True)
+                yield {"_debug": "generate_pptx_start", "deck_id": deck_id, "elapsed": round(time.time() - compose_start, 1)}
                 build_result = mcp_client.call_tool_sync(
                     tool_use_id=f"build-{uuid.uuid4().hex[:8]}",
                     name="generate_pptx",
                     arguments={"deck_id": deck_id},
                 )
+                logger.info("generate_pptx_end: deck=%s, elapsed=%.1fs", deck_id, time.time() - compose_start)
+                print(f"[COMPOSE] generate_pptx_end: deck={deck_id}, elapsed={time.time() - compose_start:.1f}s", flush=True)
+                yield {"_debug": "generate_pptx_end", "deck_id": deck_id, "elapsed": round(time.time() - compose_start, 1)}
                 build_text = ""
                 for item in build_result.get("content", []):
                     if isinstance(item, dict) and "text" in item:
@@ -576,5 +656,6 @@ def make_compose_slides(mcp_servers: list, model, composer_mcp_factory=None):
                 pass
 
         yield json.dumps(report)
+        _compose_state.clear()
 
     return compose_slides
